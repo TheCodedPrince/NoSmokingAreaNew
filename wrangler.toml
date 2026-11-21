@@ -9,3 +9,17 @@ crons = ["0 7 * * *"]
 binding = "DB"
 database_name = "nosmokingarea-db"
 database_id = "c05b7a06-eaef-4416-92fd-1ee4e66ef3e9"
+
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+invocation_logs = true
+persist = true
+
+[observability.traces]
+enabled = false
+head_sampling_rate = 1
+persist = true
+
+[observability.issue_detection]
+enabled = false
