@@ -1,6 +1,8 @@
+
 import daily from "../daily_messages.json";
 
 const MILESTONES = [3, 7, 14, 30, 90, 180, 365];
+
 const SOS = [
   "🆘 Давай переживём эту волну вместе. Отложи решение на 10 минут, выпей воды и смени место. Ты не обязан действовать по первому импульсу. Сатоши рядом и верит в тебя!",
   "❤️ Поставь обе стопы на пол. Вдохни на 4 счёта, мягко выдохни на 6. Повтори пять раз. Сейчас задача — только пережить ближайшие минуты.",
@@ -39,17 +41,41 @@ function quitDay(startAt, today = new Date()) {
   return Math.max(1, localDayNumber(today) - localDayNumber(new Date(startAt)));
 }
 
+// Telegram API с подробной диагностикой
 async function tg(env, method, body) {
-  const r = await fetch(
-    `https://api.telegram.org/bot${env.BOT_TOKEN}/${method}`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body)
-    }
-  );
-  const j = await r.json();
-  if (!j.ok) throw new Error(j.description || "Telegram API error");
+  let r;
+  let j;
+
+  try {
+    r = await fetch(
+      `https://api.telegram.org/bot${env.BOT_TOKEN}/${method}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body)
+      }
+    );
+
+    j = await r.json();
+  } catch (e) {
+    console.error("Telegram fetch failed:", method, e.message);
+    throw e;
+  }
+
+  if (!r.ok || !j.ok) {
+    console.error("Telegram API error:", JSON.stringify({
+      method,
+      http_status: r.status,
+      description: j.description,
+      error_code: j.error_code,
+      parameters: j.parameters
+    }));
+
+    throw new Error(
+      `Telegram ${method}: ${j.description || `HTTP ${r.status}`}`
+    );
+  }
+
   return j.result;
 }
 
@@ -104,6 +130,7 @@ function stats(u) {
     0,
     (Date.now() - new Date(u.start_at).getTime()) / 1000
   );
+
   const days = seconds / 86400;
   const wholeDays = Math.floor(seconds / 86400);
   const hours = Math.floor(seconds % 86400 / 3600);
@@ -714,7 +741,7 @@ export default {
       else if (update.message)
         await message(env, update.message);
     } catch (e) {
-      console.error(e);
+      console.error("Webhook handler error:", e?.stack || e);
 
       if (update.message) {
         try {
@@ -723,7 +750,9 @@ export default {
             update.message.chat.id,
             "Произошла ошибка. Попробуй ещё раз или отправь /start."
           );
-        } catch {}
+        } catch (sendError) {
+          console.error("Error notification failed:", sendError?.stack || sendError);
+        }
       }
     }
 
