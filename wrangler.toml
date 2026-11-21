@@ -1,4 +1,4 @@
-name = "nosmokingarea"
+name = "nosmokingareanew"
 main = "src/index.js"
 compatibility_date = "2026-11-21"
 
@@ -8,4 +8,4 @@ crons = ["0 4 * * *"]
 [[d1_databases]]
 binding = "DB"
 database_name = "nosmokingarea-db"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "c05b7a06-eaef-4416-92fd-1ee4e66ef3e9"
