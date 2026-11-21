@@ -1,3 +1,4 @@
+
 name = "nosmokingareanew"
 main = "src/index.js"
 compatibility_date = "2026-11-21"
@@ -8,7 +9,7 @@ crons = ["0 7 * * *"]
 [[d1_databases]]
 binding = "DB"
 database_name = "nosmokingarea-db"
-database_id = "c05b7a06-eaef-4416-92fd-1ee4e66ef3e9"
+database_id = "c05b7a06-eaef-4416-92fd-1ee4e6ef3e9"
 
 [observability.logs]
 enabled = true
@@ -20,6 +21,3 @@ persist = true
 enabled = false
 head_sampling_rate = 1
 persist = true
-
-[observability.issue_detection]
-enabled = false
