@@ -1,10 +1,10 @@
-
+﻿
 name = "nosmokingareanew"
 main = "src/index.js"
 compatibility_date = "2026-11-21"
 
 [triggers]
-crons = ["0 7 * * *"]
+crons = ["0 4 * * *"]
 
 [[d1_databases]]
 binding = "DB"
@@ -21,3 +21,4 @@ persist = true
 enabled = false
 head_sampling_rate = 1
 persist = true
+
