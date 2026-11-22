@@ -1,4 +1,3 @@
-
 import daily from "../daily_messages.json";
 
 const MILESTONES = [3, 7, 14, 30, 90, 180, 365];
@@ -475,9 +474,22 @@ async function message(env, m) {
     return say(env, chat, "Отменено.");
   }
 
-  if (text === "/broadcast" && String(id) === String(env.ADMIN_ID)) {
-    await setState(env, id, "broadcast", {});
-    return say(env, chat, "Напиши текст рассылки. Для отмены /cancel");
+  // Ручная тестовая отправка ежедневного сообщения администратору
+  if (text === "/test_daily" && String(id) === String(env.ADMIN_ID)) {
+    if (!user?.start_at) {
+      return say(env, chat, "❌ Ты не зарегистрирован. Сначала выполни /start.");
+    }
+
+    const day = quitDay(user.start_at);
+
+    console.log("TEST DAILY REQUEST:", id, "DAY:", day);
+
+    return say(
+      env,
+      chat,
+      "🧪 Тест ежедневного сообщения:\n\n" +
+      dailyText(day, user.nicotine_type)
+    );
   }
 
   if (text === "/admin" && String(id) === String(env.ADMIN_ID)) {
@@ -486,6 +498,11 @@ async function message(env, m) {
     ).first();
 
     return say(env, chat, `🛠 Всего: ${r.total || 0}\nАктивных: ${r.active || 0}`);
+  }
+
+  if (text === "/broadcast" && String(id) === String(env.ADMIN_ID)) {
+    await setState(env, id, "broadcast", {});
+    return say(env, chat, "Напиши текст рассылки. Для отмены /cancel");
   }
 
   if (text === "/reset_users" && String(id) === String(env.ADMIN_ID)) {
@@ -658,12 +675,18 @@ async function dailyJob(env) {
   let sent = 0;
   let failed = 0;
 
+  console.log("DAILY JOB START:", today);
+
   const rows = await env.DB.prepare(
     "SELECT * FROM users WHERE active=1 AND start_at IS NOT NULL AND (last_daily_sent IS NULL OR last_daily_sent<>?)"
   ).bind(today).all();
 
+  console.log("DAILY USERS FOUND:", rows.results.length);
+
   for (const u of rows.results) {
     const day = quitDay(u.start_at);
+
+    console.log("SENDING DAILY:", u.telegram_id, "DAY:", day);
 
     for (const milestone of MILESTONES.filter(x => day >= x)) {
       await env.DB.prepare(
@@ -679,29 +702,30 @@ async function dailyJob(env) {
       ).bind(today, u.telegram_id).run();
 
       sent++;
-    } catch {
+      console.log("DAILY SENT:", u.telegram_id);
+    } catch (e) {
       failed++;
-
-      if (env.ADMIN_ID) {
-        try {
-          await say(
-            env,
-            env.ADMIN_ID,
-            `⚠️ Не удалось отправить ежедневное сообщение пользователю ${u.telegram_id}`
-          );
-        } catch {}
-      }
+      console.error("DAILY FAILED:", u.telegram_id, e.message);
     }
   }
+
+  console.log("DAILY JOB FINISHED:", {
+    today,
+    found: rows.results.length,
+    sent,
+    failed
+  });
 
   if (env.ADMIN_ID) {
     try {
       await say(
         env,
         env.ADMIN_ID,
-        `Ежедневная рассылка завершена. Успешно: ${sent}, ошибки: ${failed}.`
+        `📊 Ежедневная рассылка\nДата: ${today}\nНайдено: ${rows.results.length}\nУспешно: ${sent}\nОшибки: ${failed}`
       );
-    } catch {}
+    } catch (e) {
+      console.error("ADMIN REPORT FAILED:", e.message);
+    }
   }
 }
 
@@ -760,6 +784,8 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(dailyJob(env));
+    console.log("CRON TRIGGERED:", event.cron);
+    await dailyJob(env);
+    console.log("CRON FINISHED:", event.cron);
   }
 };
