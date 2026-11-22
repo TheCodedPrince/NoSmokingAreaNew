@@ -23,6 +23,10 @@ const inline = rows => ({ inline_keyboard: rows });
 const btn = (text, callback_data) => ({ text, callback_data });
 const nowISO = () => new Date().toISOString();
 
+const isAdmin = (id, env) =>
+  Boolean(env.ADMIN_ID) &&
+  String(id).trim() === String(env.ADMIN_ID).trim();
+
 const localDay = (date = new Date()) =>
   new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Omsk",
@@ -40,7 +44,6 @@ function quitDay(startAt, today = new Date()) {
   return Math.max(1, localDayNumber(today) - localDayNumber(new Date(startAt)));
 }
 
-// Telegram API с подробной диагностикой
 async function tg(env, method, body) {
   let r;
   let j;
@@ -66,8 +69,7 @@ async function tg(env, method, body) {
       method,
       http_status: r.status,
       description: j.description,
-      error_code: j.error_code,
-      parameters: j.parameters
+      error_code: j.error_code
     }));
 
     throw new Error(
@@ -302,7 +304,9 @@ async function finishReg(env, chatId, userId, data, username) {
         env.ADMIN_ID,
         `🆕 Новый участник!\nТип: ${data.type === "vape" ? "Вейп" : "Сигареты"}\nНик: ${data.nickname}\nTelegram ID: ${userId}\nUsername: ${username ? "@" + username : "не указан"}`
       );
-    } catch {}
+    } catch (e) {
+      console.error("NEW USER ADMIN NOTIFICATION FAILED:", e.message);
+    }
   }
 }
 
@@ -381,7 +385,7 @@ async function callback(env, q) {
 
     await clearState(env, id);
 
-  } else if (data === "broadcast_confirm" && String(id) === String(env.ADMIN_ID)) {
+  } else if (data === "broadcast_confirm" && isAdmin(id, env)) {
     const s = await getState(env, id);
     if (!s?.data?.text) return;
 
@@ -425,7 +429,7 @@ async function callback(env, q) {
 
   } else if (
     data === "admin_reset_confirm" &&
-    String(id) === String(env.ADMIN_ID)
+    isAdmin(id, env)
   ) {
     await env.DB.batch([
       env.DB.prepare("DELETE FROM achievements"),
@@ -451,6 +455,21 @@ async function message(env, m) {
   const chat = m.chat.id;
   const text = (m.text || "").trim();
   const user = await getUser(env, id);
+  const admin = isAdmin(id, env);
+
+  // Диагностика команд: без записи Telegram ID в лог
+  if (
+    text === "/admin" ||
+    text === "/test_daily" ||
+    text === "/broadcast" ||
+    text === "/reset_users"
+  ) {
+    console.log("ADMIN COMMAND CHECK:", {
+      command: text,
+      adminMatch: admin,
+      adminIdConfigured: Boolean(env.ADMIN_ID)
+    });
+  }
 
   if (text === "/start") {
     if (user?.start_at) {
@@ -474,15 +493,51 @@ async function message(env, m) {
     return say(env, chat, "Отменено.");
   }
 
-  // Ручная тестовая отправка ежедневного сообщения администратору
-  if (text === "/test_daily" && String(id) === String(env.ADMIN_ID)) {
+  // ADMIN: диагностическая команда
+  if (text === "/admin") {
+    if (!admin) {
+      return say(
+        env,
+        chat,
+        `⛔ Доступ администратора не подтверждён.\n\nТвой Telegram ID: ${id}\nADMIN_ID в Worker: ${env.ADMIN_ID ? "задан" : "НЕ ЗАДАН"}\n\nПроверь значение ADMIN_ID в Cloudflare.`
+      );
+    }
+
+    const r = await env.DB.prepare(
+      "SELECT COUNT(*) total,SUM(active) active FROM users"
+    ).first();
+
+    return say(
+      env,
+      chat,
+      `🛠 Панель администратора\n\nВсего: ${r.total || 0}\nАктивных: ${r.active || 0}\n\n✅ ADMIN_ID распознан.`
+    );
+  }
+
+  // ADMIN: ручное тестирование ежедневного сообщения
+  if (text === "/test_daily") {
+    if (!admin) {
+      return say(
+        env,
+        chat,
+        `⛔ Нет доступа к тестовой рассылке.\nТвой Telegram ID: ${id}\nADMIN_ID в Worker: ${env.ADMIN_ID ? "задан" : "НЕ ЗАДАН"}`
+      );
+    }
+
     if (!user?.start_at) {
-      return say(env, chat, "❌ Ты не зарегистрирован. Сначала выполни /start.");
+      return say(
+        env,
+        chat,
+        "❌ Ты не зарегистрирован. Сначала выполни /start."
+      );
     }
 
     const day = quitDay(user.start_at);
 
-    console.log("TEST DAILY REQUEST:", id, "DAY:", day);
+    console.log("TEST DAILY REQUEST:", {
+      adminMatch: true,
+      day
+    });
 
     return say(
       env,
@@ -492,20 +547,18 @@ async function message(env, m) {
     );
   }
 
-  if (text === "/admin" && String(id) === String(env.ADMIN_ID)) {
-    const r = await env.DB.prepare(
-      "SELECT COUNT(*) total,SUM(active) active FROM users"
-    ).first();
+  if (text === "/broadcast") {
+    if (!admin)
+      return say(env, chat, "⛔ Команда доступна только администратору.");
 
-    return say(env, chat, `🛠 Всего: ${r.total || 0}\nАктивных: ${r.active || 0}`);
-  }
-
-  if (text === "/broadcast" && String(id) === String(env.ADMIN_ID)) {
     await setState(env, id, "broadcast", {});
     return say(env, chat, "Напиши текст рассылки. Для отмены /cancel");
   }
 
-  if (text === "/reset_users" && String(id) === String(env.ADMIN_ID)) {
+  if (text === "/reset_users") {
+    if (!admin)
+      return say(env, chat, "⛔ Команда доступна только администратору.");
+
     return say(
       env,
       chat,
@@ -524,7 +577,7 @@ async function message(env, m) {
   if (s) {
     const d = s.data;
 
-    if (s.state === "broadcast" && String(id) === String(env.ADMIN_ID)) {
+    if (s.state === "broadcast" && admin) {
       await setState(env, id, "broadcast_confirm", { text });
 
       return say(
@@ -686,7 +739,10 @@ async function dailyJob(env) {
   for (const u of rows.results) {
     const day = quitDay(u.start_at);
 
-    console.log("SENDING DAILY:", u.telegram_id, "DAY:", day);
+    console.log("SENDING DAILY:", {
+      day,
+      nicotineType: u.nicotine_type
+    });
 
     for (const milestone of MILESTONES.filter(x => day >= x)) {
       await env.DB.prepare(
@@ -702,10 +758,10 @@ async function dailyJob(env) {
       ).bind(today, u.telegram_id).run();
 
       sent++;
-      console.log("DAILY SENT:", u.telegram_id);
+      console.log("DAILY SENT");
     } catch (e) {
       failed++;
-      console.error("DAILY FAILED:", u.telegram_id, e.message);
+      console.error("DAILY FAILED:", e.message);
     }
   }
 
@@ -734,7 +790,6 @@ export default {
     if (request.method !== "POST")
       return new Response("No Smoking Area webhook is running");
 
-    // Диагностика WEBHOOK_SECRET без раскрытия его значения
     if (!env.WEBHOOK_SECRET) {
       console.error("WEBHOOK_SECRET is missing in runtime");
       return new Response("Webhook secret is not configured", {
@@ -785,7 +840,13 @@ export default {
 
   async scheduled(event, env, ctx) {
     console.log("CRON TRIGGERED:", event.cron);
-    await dailyJob(env);
-    console.log("CRON FINISHED:", event.cron);
+
+    try {
+      await dailyJob(env);
+      console.log("CRON FINISHED:", event.cron);
+    } catch (e) {
+      console.error("CRON FAILED:", e?.stack || e);
+      throw e;
+    }
   }
 };
