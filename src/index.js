@@ -1,3 +1,4 @@
+
 import daily from "../daily_messages.json";
 
 const MILESTONES = [3, 7, 14, 30, 90, 180, 365];
@@ -457,7 +458,6 @@ async function message(env, m) {
   const user = await getUser(env, id);
   const admin = isAdmin(id, env);
 
-  // Диагностика команд: без записи Telegram ID в лог
   if (
     text === "/admin" ||
     text === "/test_daily" ||
@@ -493,7 +493,6 @@ async function message(env, m) {
     return say(env, chat, "Отменено.");
   }
 
-  // ADMIN: диагностическая команда
   if (text === "/admin") {
     if (!admin) {
       return say(
@@ -514,7 +513,6 @@ async function message(env, m) {
     );
   }
 
-  // ADMIN: ручное тестирование ежедневного сообщения
   if (text === "/test_daily") {
     if (!admin) {
       return say(
@@ -842,10 +840,58 @@ export default {
     console.log("CRON TRIGGERED:", event.cron);
 
     try {
-      await dailyJob(env);
-      console.log("CRON FINISHED:", event.cron);
+      const target = Date.parse(env.CRON_TEST_AT || "");
+
+      if (!Number.isFinite(target)) {
+        console.log("CRON TEST: waiting for valid CRON_TEST_AT");
+        return;
+      }
+
+      if (Date.now() < target) {
+        console.log("CRON TEST: waiting until target time");
+        return;
+      }
+
+      const marker = "__cron_test_once_20261122__";
+
+      const existing = await env.DB.prepare(
+        "SELECT state FROM states WHERE telegram_id=?"
+      ).bind(marker).first();
+
+      if (existing?.state === "done") {
+        console.log("CRON TEST: already completed");
+        return;
+      }
+
+      const user = await getUser(env, env.ADMIN_ID);
+
+      if (!user?.start_at) {
+        console.log("CRON TEST: admin user not registered");
+        return;
+      }
+
+      await say(
+        env,
+        env.ADMIN_ID,
+        "🧪 Автоматический тест Cron:\n\n" +
+        dailyText(
+          quitDay(user.start_at),
+          user.nicotine_type
+        )
+      );
+
+      await env.DB.prepare(
+        "INSERT OR REPLACE INTO states(telegram_id,state,data) VALUES(?,?,?)"
+      ).bind(
+        marker,
+        "done",
+        JSON.stringify({ sent_at: nowISO() })
+      ).run();
+
+      console.log("CRON TEST: MESSAGE SENT");
+
     } catch (e) {
-      console.error("CRON FAILED:", e?.stack || e);
+      console.error("CRON TEST FAILED:", e?.stack || e);
       throw e;
     }
   }
