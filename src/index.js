@@ -1,4 +1,3 @@
-
 import daily from "../daily_messages.json";
 
 const MILESTONES = [3, 7, 14, 30, 90, 180, 365];
@@ -605,7 +604,7 @@ async function message(env, m) {
         env,
         chat,
         next === "liquid"
-          ? "Сколько стоит бутылка жидкости? Введи сумму числом."
+          ? "Сколько стоит бутылка жижи? Введи сумму числом."
           : "Сколько сигарет в среднем выкуривал(а) за день?"
       );
     }
@@ -615,7 +614,7 @@ async function message(env, m) {
       pack: ["confirm", "", 1e6],
       liquid: ["cart", "Сколько стоит один картридж?", 1e6],
       cart: ["cartDays", "На сколько дней хватает одного картриджа?", 3650],
-      cartDays: ["liquidDays", "На сколько дней хватает одной бутылки жидкости?", 3650],
+      cartDays: ["liquidDays", "На сколько дней хватает одной бутылки жижи?", 3650],
       liquidDays: ["confirm", "", 3650]
     };
 
@@ -641,7 +640,7 @@ async function message(env, m) {
       await setState(env, id, "confirm", d);
 
       const details = d.type === "vape"
-        ? `Тип: Вейп\nНик: ${d.nickname}\nЖидкость: ${d.liquid} (на ${d.liquidDays} дней)\nКартридж: ${d.cart} (на ${d.cartDays} дней)`
+        ? `Тип: Вейп\nНик: ${d.nickname}\nЖижа: ${d.liquid} (на ${d.liquidDays} дней)\nКартридж: ${d.cart} (на ${d.cartDays} дней)`
         : `Тип: Сигареты\nНик: ${d.nickname}\nСигарет в день: ${d.cigs}\nЦена пачки: ${d.pack}`;
 
       return say(
@@ -675,7 +674,7 @@ async function message(env, m) {
       : "пока впереди";
 
     const out = user.nicotine_type === "vape"
-      ? `📊 Статистика ${user.nickname}\n\n💨 Без вейпа: ${a.days} дн. ${a.hours} ч. ${a.minutes} мин.\n💰 Сэкономлено: ${a.money.toFixed(2)}\n🧴 Не использовано жидкости: ${a.liquid.toFixed(2)} бутылки (оценка)\n🔋 Избежано покупок картриджей: ${a.carts.toFixed(2)} (оценка)\n🏅 Достижения: ${achievements}`
+      ? `📊 Статистика ${user.nickname}\n\n💨 Без вейпа: ${a.days} дн. ${a.hours} ч. ${a.minutes} мин.\n💰 Сэкономлено: ${a.money.toFixed(2)}\n🧴 Не использовано жижи: ${a.liquid.toFixed(2)} бутылки (оценка)\n🔋 Избежано покупок картриджей: ${a.carts.toFixed(2)} (оценка)\n🏅 Достижения: ${achievements}`
       : `📊 Статистика ${user.nickname}\n\n🌱 Без сигарет: ${a.days} дн. ${a.hours} ч. ${a.minutes} мин.\n🚭 Не выкурено: ${a.cigs}\n💰 Сэкономлено: ${a.money.toFixed(2)}\n⏳ Возвращено времени: ${Math.floor(a.saved / 60)} ч. ${a.saved % 60} мин.\n🏅 Достижения: ${achievements}`;
 
     return say(env, chat, out, { reply_markup: menu });
@@ -839,11 +838,24 @@ export default {
   async scheduled(event, env, ctx) {
     console.log("CRON TRIGGERED:", event.cron);
 
+    // Если тестовая переменная удалена — запускаем обычную рассылку.
+    if (!env.CRON_TEST_AT) {
+      try {
+        await dailyJob(env);
+        console.log("NORMAL DAILY CRON FINISHED");
+      } catch (e) {
+        console.error("NORMAL DAILY CRON FAILED:", e?.stack || e);
+        throw e;
+      }
+      return;
+    }
+
+    // Если тестовая переменная задана — выполняем одноразовый тест.
     try {
-      const target = Date.parse(env.CRON_TEST_AT || "");
+      const target = Date.parse(env.CRON_TEST_AT);
 
       if (!Number.isFinite(target)) {
-        console.log("CRON TEST: waiting for valid CRON_TEST_AT");
+        console.log("CRON TEST: invalid CRON_TEST_AT");
         return;
       }
 
